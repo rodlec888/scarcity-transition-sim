@@ -2,9 +2,10 @@
 @file collector.py
 @description Mesa DataCollector wired to cycle_data.csv schema.
 @author ScarcityTransitionSim_Dev
-@version 1.0.0
+@version 1.1.0
 @date 2026-03-04
 @changelog
+- 2026-03-06: v1.1.0 - Real coordination_efficiency (entropy ratio) + run_summary export
 - 2026-03-04: v1.0.0 - Initial creation
 """
 
@@ -21,6 +22,46 @@ from src.config import MECHANISMS
 
 if TYPE_CHECKING:
     from src.environment import ScarcityModel
+
+
+def _compute_coordination_efficiency(actions: list[dict], n_goods: int) -> float:
+    """Entropy ratio of target_good distribution vs uniform distribution.
+
+    Measures how much a mechanism concentrates coordination on specific goods
+    compared to a random (uniform) allocation. Ratio ~1.0 means idle (uniform),
+    <1.0 means concentrated, >1.0 is not possible with Shannon entropy ratio
+    but the metric is clamped to observed behavior.
+
+    Args:
+        actions: List of action dicts for one mechanism in one cycle.
+        n_goods: Total number of distinct goods in the simulation.
+
+    Returns:
+        Entropy ratio in [0.0, 1.0]. Returns 1.0 if no actions or single good.
+    """
+    if not actions or n_goods <= 1:
+        return 1.0
+
+    counts: dict[str, int] = {}
+    for a in actions:
+        good = a.get("target_good")
+        if good:
+            counts[good] = counts.get(good, 0) + 1
+
+    if not counts:
+        return 1.0
+
+    total = sum(counts.values())
+    actual_entropy = -sum(
+        (c / total) * math.log2(c / total) for c in counts.values() if c > 0
+    )
+    max_entropy = math.log2(n_goods)
+
+    if max_entropy == 0:
+        return 1.0
+    ratio = actual_entropy / max_entropy
+    # Normalize -0.0 to 0.0 for clean output
+    return ratio + 0.0
 
 
 def _cosine_similarity(a: dict[str, int], b: dict[str, int]) -> float:
@@ -69,6 +110,18 @@ def _collect_cycle_metrics(model: ScarcityModel) -> list[dict]:
     current_patterns = model._compute_behavioral_patterns()
     custom_count = model.compute_custom_action_count()
 
+    # Total number of distinct goods for entropy normalization
+    from src.environment import MATERIAL_GOODS, INHERENT_GOODS
+
+    n_goods = len(MATERIAL_GOODS) + len(INHERENT_GOODS)
+
+    # Group current cycle actions by mechanism for efficiency computation
+    actions_by_mechanism: dict[str, list[dict]] = {m: [] for m in MECHANISMS}
+    for action in model.cycle_actions:
+        mech = action.get("mechanism")
+        if mech in actions_by_mechanism:
+            actions_by_mechanism[mech].append(action)
+
     rows = []
     for mechanism in MECHANISMS:
         # Behavioral pattern score: cosine sim to Phase 1 baseline
@@ -78,6 +131,11 @@ def _collect_cycle_metrics(model: ScarcityModel) -> list[dict]:
                 current_patterns.get(mechanism, {}),
                 model.baseline_patterns[mechanism],
             )
+
+        # Coordination efficiency: entropy ratio
+        eff = _compute_coordination_efficiency(
+            actions_by_mechanism[mechanism], n_goods
+        )
 
         rows.append(
             {
@@ -91,7 +149,7 @@ def _collect_cycle_metrics(model: ScarcityModel) -> list[dict]:
                 "material_scarcity": model.material_scarcity,
                 "mechanism": mechanism,
                 "adoption_rate": adoption_rates.get(mechanism, 0.0),
-                "coordination_efficiency": 1.0,  # placeholder — Phase 2 implementation
+                "coordination_efficiency": eff,
                 "behavioral_pattern_score": bps,
                 "custom_action_count": custom_count if mechanism == MECHANISMS[0] else 0,
             }
@@ -150,3 +208,18 @@ def export_novel_actions(model: ScarcityModel, output_dir: Path):
     df = pd.DataFrame(rows)
     df.to_csv(output_dir / "novel_actions.csv", index=False)
     return df
+
+
+def export_run_summary(verdicts_df: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
+    """Export verdict classification to run_summary.csv.
+
+    Args:
+        verdicts_df: DataFrame from classify_all_mechanisms().
+        output_dir: Directory to write the CSV into.
+
+    Returns:
+        The same DataFrame (pass-through for chaining).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    verdicts_df.to_csv(output_dir / "run_summary.csv", index=False)
+    return verdicts_df

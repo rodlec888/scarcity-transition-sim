@@ -2,9 +2,10 @@
 @file config.py
 @description Central simulation configuration — all parameters in a single dataclass.
 @author ScarcityTransitionSim_Dev
-@version 1.0.0
+@version 1.1.0
 @date 2026-03-04
 @changelog
+- 2026-03-06: v1.1.0 - Add Phase 2 verdict threshold fields (ADR-002)
 - 2026-03-04: v1.0.0 - Initial creation with all 11 parameters from architecture spec
 """
 
@@ -64,6 +65,11 @@ class SimConfig:
     # --- Verdict thresholds ---
     collapse_threshold: float = 0.05
     collapse_sustained_n: int = 20
+    efficiency_idle_band: tuple[float, float] = (0.9, 1.1)
+    behavioral_pattern_threshold: float = 0.6
+    recovery_adoption_threshold: float = 0.10
+    recovery_sustained_n: int = 10
+    goods_domain_jaccard_threshold: float = 0.7
 
     # --- Derived (not stored, computed) ---
 

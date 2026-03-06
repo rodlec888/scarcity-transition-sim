@@ -157,10 +157,11 @@ class TestFullPipeline:
         assert (cycle_df["adoption_rate"] >= 0.0).all()
         assert (cycle_df["adoption_rate"] <= 1.0).all()
 
-    def test_coordination_efficiency_placeholder(self, run_result):
+    def test_coordination_efficiency_in_range(self, run_result):
         _, cycle_df, _, _ = run_result
-        # Currently a placeholder returning 1.0
-        assert (cycle_df["coordination_efficiency"] == 1.0).all()
+        # Entropy ratio is in [0.0, 1.0] — 1.0 means uniform, 0.0 means single good
+        assert (cycle_df["coordination_efficiency"] >= 0.0).all()
+        assert (cycle_df["coordination_efficiency"] <= 1.0).all()
 
 
 # ---------------------------------------------------------------------------
