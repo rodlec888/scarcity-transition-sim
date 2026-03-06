@@ -13,9 +13,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.collector import create_collector, export_cycle_data, export_novel_actions
-from src.config import MECHANISMS, SimConfig
+from src.collector import create_collector, export_cycle_data, export_novel_actions, export_run_summary
+from src.config import MECHANISMS, VERDICTS, SimConfig
 from src.environment import ScarcityModel
+from src.verdicts import classify_all_mechanisms
 
 
 # ---------------------------------------------------------------------------
@@ -192,3 +193,79 @@ class TestReproducibility:
 
         # Compare numeric columns (adoption_rate, material_scarcity, etc.)
         pd.testing.assert_frame_equal(dfs[0], dfs[1])
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 pipeline: model -> step -> collect -> export -> classify -> summary
+# ---------------------------------------------------------------------------
+
+class TestPhase2Pipeline:
+    """End-to-end Phase 2 test: run model, export CSVs, classify verdicts, validate summary."""
+
+    @pytest.fixture()
+    def pipeline_config(self) -> SimConfig:
+        return SimConfig(
+            transition_rate=3,
+            scarcity_curve="linear",
+            random_seed=42,
+            n_agents=4,
+            phase1_cycles=3,
+            phase3_cycles=3,
+            phase4_cycles=2,
+        )
+
+    @pytest.fixture()
+    def run_result(self, pipeline_config, mock_reasoner, tmp_output_dir):
+        """Run the full simulation, export all 3 CSVs, return artifacts."""
+        model = ScarcityModel(pipeline_config)
+        model.datacollector = create_collector()
+
+        for cycle in range(pipeline_config.total_cycles):
+            model.step()
+            model.datacollector.collect(model)
+
+        cycle_df = export_cycle_data(model, tmp_output_dir)
+        novel_df = export_novel_actions(model, tmp_output_dir)
+        verdicts_df = classify_all_mechanisms(cycle_df, pipeline_config)
+        summary_df = export_run_summary(verdicts_df, tmp_output_dir)
+
+        return model, cycle_df, novel_df, summary_df, tmp_output_dir
+
+    def test_run_summary_csv_exists(self, run_result):
+        _, _, _, _, output_dir = run_result
+        assert (output_dir / "run_summary.csv").exists()
+
+    def test_run_summary_has_7_rows(self, run_result):
+        _, _, _, summary_df, _ = run_result
+        assert len(summary_df) == 7
+
+    def test_run_summary_has_all_mechanisms(self, run_result):
+        _, _, _, summary_df, _ = run_result
+        assert set(summary_df["mechanism"]) == set(MECHANISMS)
+
+    def test_all_verdicts_non_null(self, run_result):
+        _, _, _, summary_df, _ = run_result
+        assert summary_df["verdict"].notna().all()
+        assert (summary_df["verdict"] != "").all()
+
+    def test_all_verdicts_from_valid_set(self, run_result):
+        _, _, _, summary_df, _ = run_result
+        for verdict in summary_df["verdict"]:
+            assert verdict in VERDICTS, f"Unexpected verdict: {verdict}"
+
+    def test_run_summary_csv_roundtrip(self, run_result):
+        """The CSV on disk can be re-read and matches the DataFrame."""
+        _, _, _, summary_df, output_dir = run_result
+        reloaded = pd.read_csv(output_dir / "run_summary.csv")
+        assert len(reloaded) == len(summary_df)
+        assert set(reloaded.columns) == set(summary_df.columns)
+
+    def test_all_three_csvs_exist(self, run_result):
+        _, _, _, _, output_dir = run_result
+        assert (output_dir / "cycle_data.csv").exists()
+        assert (output_dir / "novel_actions.csv").exists()
+        assert (output_dir / "run_summary.csv").exists()
+
+    def test_no_real_api_calls(self, run_result, mock_reasoner):
+        assert mock_reasoner._call_count > 0
+        assert not hasattr(mock_reasoner, "client")
