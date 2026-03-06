@@ -7,14 +7,17 @@
 .DS_Store
 Thumbs.db
 
-# Editor / AI tooling
+# Editor / AI tooling  ← never committed, always local
 .vscode/
 .claude/
 CLAUDE.md
+.github/copilot-instructions.md
 .idea/
 *.swp
 
-# Internal planning docs
+# Internal planning docs  ← local reference only, not for public consumption
+# docs/internal/ catches all internal docs in one line — no file names leaked
+docs/internal/
 ROADMAP.md
 
 # Python

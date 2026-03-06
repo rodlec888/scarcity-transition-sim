@@ -315,26 +315,11 @@ def scarcity_at(t: int, transition_rate: int, curve: str) -> float:
 
 `4 transition_rates × 3 scarcity_curves × 3 seeds = 36 runs`
 
-### LLM Cost Model
-
-Agent calls are priced at approximately 500 tokens input and 100 tokens output per call. At xAI grok-4-fast pricing ($0.20/M input, $0.50/M output), the per-call cost is approximately $0.00015 at standard rates or $0.000075 via Batch API (50% discount, async processing).
-
-| transition_rate | Total cycles/run | LLM calls/run (n=100) | Standard | Batch API |
-|----------------|-----------------|------------------------|----------|-----------|
-| 5   | ~455 | ~45,500 | ~$6.83 | ~$3.41 |
-| 25  | ~475 | ~47,500 | ~$7.13 | ~$3.56 |
-| 100 | ~550 | ~55,000 | ~$8.25 | ~$4.13 |
-| 500 | ~950 | ~95,000 | ~$14.25 | ~$7.13 |
-
-**Estimated total for 36-run sweep (n=100):** ~$33 standard / ~$16 Batch API.
-
-At this cost structure, agent count is a statistical power decision rather than a budget constraint.
-
 ### LLM Configuration
 
-- **Primary model**: `grok-4.x-fast-reasoning` (latest available at build time) — $0.20/$0.50 per M tokens, 2M context. The reasoning variant is preferred: agents reason through coordination strategy before acting, producing higher-quality structured action selection. The model name is abstracted behind an `AgentReasoner` class as a single config value.
+- **Primary model**: xAI `grok-4.x-fast-reasoning` (latest available at build time). The reasoning variant is preferred: agents reason through coordination strategy before acting, producing higher-quality structured action selection. The model name is abstracted behind an `AgentReasoner` class as a single config value.
 - **Retroanalysis model**: `grok-4-0709` or equivalent — used for novel action classification and information structure checks (low volume, higher reasoning quality).
-- **Batch API** is used for all per-cycle calls — async processing with 50% cost reduction. Latency is not a constraint for offline simulations.
+- **Batch API** is used for all per-cycle calls. LLM call volume scales linearly with agent count × total cycles per run.
 
 ---
 
