@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.collector import (
@@ -132,7 +133,8 @@ def run_single(args: argparse.Namespace) -> None:
         phase4_cycles=args.phase4_cycles,
     )
 
-    run_id = f"run_{config.random_seed}_{config.transition_rate}_{config.scarcity_curve}"
+    ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = f"run_{config.random_seed}_{config.transition_rate}_{config.scarcity_curve}_{ts}"
     output_dir = Path(args.output_dir) if args.output_dir else Path("outputs") / run_id
 
     logger.info(
