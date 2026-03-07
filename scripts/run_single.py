@@ -12,8 +12,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -121,6 +124,38 @@ def _collect_raw_actions_by_mechanism(
     return result
 
 
+def _write_run_metadata(
+    output_dir: Path,
+    run_id: str,
+    config: SimConfig,
+    start_utc: str,
+    elapsed_s: float,
+    api_calls: int,
+    verdicts: dict[str, str],
+    notes: str = "",
+) -> None:
+    """Write run_metadata.json with all parameters and context for result interpretation."""
+    import mesa
+
+    metadata = {
+        "run_id": run_id,
+        "started_at_utc": start_utc,
+        "elapsed_seconds": round(elapsed_s, 1),
+        "api_calls": api_calls,
+        "config": {k: v for k, v in asdict(config).items()},
+        "environment": {
+            "xai_model": os.getenv("XAI_MODEL", "unknown"),
+            "mesa_version": mesa.__version__,
+        },
+        "verdicts": verdicts,
+        "notes": notes,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "run_metadata.json").write_text(
+        json.dumps(metadata, indent=2, default=str) + "\n"
+    )
+
+
 def run_single(args: argparse.Namespace) -> None:
     """Run a full simulation, classify verdicts, and export all outputs."""
     config = SimConfig(
@@ -133,6 +168,7 @@ def run_single(args: argparse.Namespace) -> None:
         phase4_cycles=args.phase4_cycles,
     )
 
+    start_utc = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"run_{config.random_seed}_{config.transition_rate}_{config.scarcity_curve}_{ts}"
     output_dir = Path(args.output_dir) if args.output_dir else Path("outputs") / run_id
@@ -232,6 +268,18 @@ def run_single(args: argparse.Namespace) -> None:
             )
     else:
         logger.info("No mechanisms collapsed — no replacement chains to trace.")
+
+    # --- Write run metadata ---
+    verdict_map = {row["mechanism"]: row["verdict"] for _, row in verdicts_df.iterrows()}
+    _write_run_metadata(
+        output_dir=output_dir,
+        run_id=run_id,
+        config=config,
+        start_utc=start_utc,
+        elapsed_s=sim_elapsed,
+        api_calls=AgentReasoner.get_instance().call_count,
+        verdicts=verdict_map,
+    )
 
     logger.info("All outputs written to %s", output_dir.resolve())
 
