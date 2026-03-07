@@ -210,6 +210,43 @@ def export_novel_actions(model: ScarcityModel, output_dir: Path):
     return df
 
 
+def export_agent_actions(model: ScarcityModel, output_dir: Path):
+    """Export every individual agent decision to agent_actions.csv.
+
+    Args:
+        model: The model instance.
+        output_dir: Directory to write the CSV into.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for agent in model.agents_list:
+        persona = agent.persona
+        for action in agent.action_history:
+            rows.append(
+                {
+                    "run_id": model.config.random_seed,
+                    "cycle": action.get("cycle"),
+                    "agent_id": action.get("agent_id"),
+                    "node_id": action.get("node_id"),
+                    "mechanism": action.get("mechanism"),
+                    "action_type": action.get("action_type"),
+                    "target_good": action.get("target_good"),
+                    "counterparty": action.get("counterparty"),
+                    "reasoning": action.get("reasoning", ""),
+                    "persona_work_identity": persona.work_identity if persona else None,
+                    "persona_adaptability": persona.adaptability if persona else None,
+                    "persona_social_orientation": persona.social_orientation if persona else None,
+                    "persona_risk_tolerance": persona.risk_tolerance if persona else None,
+                    "persona_resource_level": persona.resource_level if persona else None,
+                }
+            )
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_dir / "agent_actions.csv", index=False)
+    return df
+
+
 def export_run_summary(verdicts_df: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
     """Export verdict classification to run_summary.csv.
 

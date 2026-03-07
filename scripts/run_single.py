@@ -18,6 +18,7 @@ from pathlib import Path
 
 from src.collector import (
     create_collector,
+    export_agent_actions,
     export_cycle_data,
     export_novel_actions,
     export_run_summary,
@@ -177,13 +178,16 @@ def run_single(args: argparse.Namespace) -> None:
         AgentReasoner.get_instance().call_count,
     )
 
-    # --- Export cycle_data.csv and novel_actions.csv ---
+    # --- Export all CSVs ---
     cycle_df = export_cycle_data(model, output_dir)
     novel_df = export_novel_actions(model, output_dir)
+    actions_df = export_agent_actions(model, output_dir)
     logger.info(
-        "Exported cycle_data.csv (%d rows) and novel_actions.csv (%d rows)",
+        "Exported cycle_data.csv (%d rows), novel_actions.csv (%d rows), "
+        "agent_actions.csv (%d rows)",
         len(cycle_df),
         len(novel_df),
+        len(actions_df),
     )
 
     # --- Phase 5: Retroanalysis ---

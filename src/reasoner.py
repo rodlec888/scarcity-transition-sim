@@ -62,7 +62,8 @@ Rules:
 1. You MUST choose a mechanism and action_type from the vocabulary above.
 2. If no standard mechanism fits your coordination need, use "custom" and describe \
 your novel approach in the reasoning field.
-3. Consider the current scarcity level — abundant goods need less coordination.
+3. Consider the current scarcity level. Some goods may become abundant while others \
+remain scarce — you can redirect coordination mechanisms to where they are still needed.
 4. Consider your persona traits when deciding strategy.
 5. Respond ONLY with the JSON object. No other text.\
 """
@@ -170,7 +171,9 @@ class AgentReasoner:
     def __init__(self):
         self.api_key = os.getenv("XAI_API_KEY", "")
         self.base_url = os.getenv("XAI_API_BASE_URL", "https://api.x.ai/v1")
-        self.model = os.getenv("XAI_MODEL", "grok-4-fast")
+        self.model = os.getenv("XAI_MODEL")
+        if not self.model:
+            raise ValueError("XAI_MODEL not set in environment")
 
         if not self.api_key:
             raise ValueError("XAI_API_KEY not set in environment")
