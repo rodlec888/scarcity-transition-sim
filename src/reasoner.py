@@ -131,6 +131,47 @@ def _build_behavioral_summary(agent: CoordinationAgent, window: int = 20) -> lis
     return parts
 
 
+def _build_neighborhood_summary(observations: dict[str, Any], window: int = 20) -> list[str]:
+    """Build a summary of neighborhood behavioral trends.
+
+    Aggregates mechanism usage across all neighbors' histories to show
+    what the local community is doing — enabling agents to detect and
+    respond to collective shifts.
+    """
+    histories = observations.get("neighbor_histories", [])
+    if not histories:
+        return []
+
+    # Aggregate mechanism usage across all neighbors over the window
+    usage: dict[str, int] = {}
+    total = 0
+    for hist in histories:
+        for a in hist[-window:]:
+            mech = a.get("mechanism", "custom")
+            usage[mech] = usage.get(mech, 0) + 1
+            total += 1
+
+    if not total:
+        return []
+
+    parts = ["NEIGHBORHOOD TRENDS (your neighbors' recent behavior):"]
+    ranked = sorted(usage.items(), key=lambda x: x[1], reverse=True)
+    trend_str = ", ".join(f"{m} ({c}/{total})" for m, c in ranked)
+    parts.append(f"  Mechanism usage: {trend_str}")
+
+    # Mechanisms no neighbor is using anymore
+    all_ever: set[str] = set()
+    for hist in histories:
+        for a in hist:
+            all_ever.add(a.get("mechanism", "custom"))
+    recent_used = set(usage.keys())
+    community_abandoned = all_ever - recent_used
+    if community_abandoned:
+        parts.append(f"  No neighbor is currently using: {', '.join(sorted(community_abandoned))}")
+
+    return parts
+
+
 def _build_user_prompt(agent: CoordinationAgent, observations: dict[str, Any]) -> str:
     """Construct the per-cycle user prompt from agent state and observations."""
     persona = agent.persona
@@ -174,6 +215,12 @@ def _build_user_prompt(agent: CoordinationAgent, observations: dict[str, Any]) -
     if summary:
         parts.append("")
         parts.extend(summary)
+
+    # Neighborhood trends — what the local community is doing
+    neighborhood = _build_neighborhood_summary(observations)
+    if neighborhood:
+        parts.append("")
+        parts.extend(neighborhood)
 
     return "\n".join(parts)
 

@@ -120,10 +120,16 @@ class CoordinationAgent(mesa.Agent):
         model = self.scarcity_model
         neighbor_ids = model.neighbors_of(self.node_id)
 
-        # Recent actions by neighbors (last cycle)
+        # Recent actions by neighbors (this cycle so far)
         neighbor_actions = [
             a for a in model.cycle_actions if a.get("agent_id") in neighbor_ids
         ]
+
+        # Collect neighbor action histories for behavioral summary
+        neighbor_histories: list[list[dict[str, Any]]] = []
+        for agent in model.agents_list:
+            if agent.node_id in neighbor_ids:
+                neighbor_histories.append(agent.action_history)
 
         return {
             "cycle": model.cycle,
@@ -132,6 +138,7 @@ class CoordinationAgent(mesa.Agent):
             "goods": dict(model.goods),
             "neighbor_ids": neighbor_ids,
             "neighbor_recent_actions": neighbor_actions[-10:],  # cap for prompt size
+            "neighbor_histories": neighbor_histories,
             "own_recent_actions": self.action_history[-5:],
         }
 

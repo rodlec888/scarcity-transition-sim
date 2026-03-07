@@ -24,6 +24,7 @@ from src.reasoner import (
     SYSTEM_PROMPT,
     AgentReasoner,
     _build_behavioral_summary,
+    _build_neighborhood_summary,
     _build_user_prompt,
     _parse_action_response,
 )
@@ -55,6 +56,7 @@ def _make_observations(**overrides: Any) -> dict[str, Any]:
         "goods": {"food_shelter": 1.0, "attention": 1.0},
         "neighbor_ids": [1, 2],
         "neighbor_recent_actions": [],
+        "neighbor_histories": [],
         "own_recent_actions": [],
     }
     defaults.update(overrides)
@@ -404,6 +406,46 @@ class TestBuildBehavioralSummary:
         obs = _make_observations()
         prompt = _build_user_prompt(agent, obs)
         assert "YOUR BEHAVIORAL SUMMARY:" in prompt
+
+
+# ---------------------------------------------------------------------------
+# _build_neighborhood_summary
+# ---------------------------------------------------------------------------
+
+class TestBuildNeighborhoodSummary:
+
+    def test_empty_histories_returns_empty(self):
+        obs = _make_observations(neighbor_histories=[])
+        assert _build_neighborhood_summary(obs) == []
+
+    def test_includes_mechanism_usage(self):
+        neighbor1 = [{"mechanism": "price", "cycle": i} for i in range(5)]
+        neighbor2 = [{"mechanism": "employment", "cycle": i} for i in range(3)]
+        obs = _make_observations(neighbor_histories=[neighbor1, neighbor2])
+        lines = _build_neighborhood_summary(obs)
+        joined = "\n".join(lines)
+        assert "NEIGHBORHOOD TRENDS" in joined
+        assert "price (5/8)" in joined
+        assert "employment (3/8)" in joined
+
+    def test_detects_community_abandoned(self):
+        # Neighbor used money early, then only employment recently
+        neighbor = (
+            [{"mechanism": "money", "cycle": 0}]
+            + [{"mechanism": "employment", "cycle": i} for i in range(1, 25)]
+        )
+        obs = _make_observations(neighbor_histories=[neighbor])
+        lines = _build_neighborhood_summary(obs)
+        joined = "\n".join(lines)
+        assert "No neighbor is currently using" in joined
+        assert "money" in joined
+
+    def test_appears_in_user_prompt(self):
+        neighbor = [{"mechanism": "price", "cycle": i} for i in range(3)]
+        agent = _make_fake_agent()
+        obs = _make_observations(neighbor_histories=[neighbor])
+        prompt = _build_user_prompt(agent, obs)
+        assert "NEIGHBORHOOD TRENDS" in prompt
 
 
 # ---------------------------------------------------------------------------
