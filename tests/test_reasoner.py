@@ -19,9 +19,11 @@ import httpx
 import pytest
 
 from src.agent import Persona
+from src.config import SimConfig
 from src.reasoner import (
     SYSTEM_PROMPT,
     AgentReasoner,
+    _build_behavioral_summary,
     _build_user_prompt,
     _parse_action_response,
 )
@@ -31,12 +33,17 @@ from src.reasoner import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_fake_agent(persona: Persona | None = None) -> MagicMock:
+def _make_fake_agent(
+    persona: Persona | None = None,
+    action_history: list[dict[str, Any]] | None = None,
+) -> MagicMock:
     """Create a minimal mock of CoordinationAgent for prompt building."""
     agent = MagicMock()
     agent.persona = persona or Persona(0.5, 0.5, 0.5, 0.5, 0.5)
     agent.unique_id = 1
     agent.node_id = 0
+    agent.action_history = action_history or []
+    agent.scarcity_model.config = SimConfig()
     return agent
 
 
@@ -329,6 +336,74 @@ class TestAgentReasonerDecide:
         assert messages[0]["content"] == SYSTEM_PROMPT
         assert messages[1]["role"] == "user"
         assert "CYCLE: 10" in messages[1]["content"]
+
+
+# ---------------------------------------------------------------------------
+# _build_behavioral_summary
+# ---------------------------------------------------------------------------
+
+class TestBuildBehavioralSummary:
+
+    def test_empty_history_returns_empty(self):
+        agent = _make_fake_agent()
+        assert _build_behavioral_summary(agent) == []
+
+    def test_includes_mechanism_usage(self):
+        history = [
+            {"mechanism": "price", "cycle": i, "target_good": "food"}
+            for i in range(5)
+        ]
+        agent = _make_fake_agent(action_history=history)
+        lines = _build_behavioral_summary(agent)
+        joined = "\n".join(lines)
+        assert "Mechanism usage" in joined
+        assert "price (5)" in joined
+
+    def test_includes_scarcity_trajectory(self):
+        history = [
+            {"mechanism": "price", "cycle": 0, "target_good": "food"},
+            {"mechanism": "price", "cycle": 100, "target_good": "food"},
+        ]
+        agent = _make_fake_agent(action_history=history)
+        lines = _build_behavioral_summary(agent)
+        joined = "\n".join(lines)
+        assert "Scarcity trajectory" in joined
+        assert "cycle 0" in joined
+        assert "cycle 100" in joined
+
+    def test_detects_abandoned_mechanisms(self):
+        history = [
+            {"mechanism": "price", "cycle": 0, "target_good": "food"},
+        ] + [
+            {"mechanism": "employment", "cycle": i, "target_good": "labor"}
+            for i in range(1, 25)
+        ]
+        agent = _make_fake_agent(action_history=history)
+        lines = _build_behavioral_summary(agent)
+        joined = "\n".join(lines)
+        assert "Abandoned mechanisms" in joined
+        assert "price" in joined
+
+    def test_detects_never_used(self):
+        history = [
+            {"mechanism": "employment", "cycle": i, "target_good": "labor"}
+            for i in range(3)
+        ]
+        agent = _make_fake_agent(action_history=history)
+        lines = _build_behavioral_summary(agent)
+        joined = "\n".join(lines)
+        assert "Never used" in joined
+        assert "price" in joined
+
+    def test_appears_in_user_prompt(self):
+        history = [
+            {"mechanism": "price", "cycle": i, "target_good": "food"}
+            for i in range(3)
+        ]
+        agent = _make_fake_agent(action_history=history)
+        obs = _make_observations()
+        prompt = _build_user_prompt(agent, obs)
+        assert "YOUR BEHAVIORAL SUMMARY:" in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.agent import ACTION_VOCABULARY
+from src.config import MECHANISMS
 
 if TYPE_CHECKING:
     from src.agent import CoordinationAgent
@@ -69,6 +70,67 @@ remain scarce — you can redirect coordination mechanisms to where they are sti
 """
 
 
+def _build_behavioral_summary(agent: CoordinationAgent, window: int = 20) -> list[str]:
+    """Build a self-reflection summary from the agent's action history.
+
+    Returns prompt lines describing mechanism usage patterns, abandoned mechanisms,
+    and scarcity trajectory — giving the agent continuity of intention.
+    """
+    history = agent.action_history
+    if not history:
+        return []
+
+    config = agent.scarcity_model.config
+    parts = ["YOUR BEHAVIORAL SUMMARY:"]
+
+    # Mechanism usage counts over the rolling window
+    recent = history[-window:]
+    usage: dict[str, int] = {}
+    for a in recent:
+        mech = a.get("mechanism", "custom")
+        usage[mech] = usage.get(mech, 0) + 1
+
+    ranked = sorted(usage.items(), key=lambda x: x[1], reverse=True)
+    usage_str = ", ".join(f"{m} ({c})" for m, c in ranked)
+    parts.append(f"  Mechanism usage (last {len(recent)} cycles): {usage_str}")
+
+    # Scarcity trajectory
+    first_cycle = history[0].get("cycle", 0)
+    current_cycle = history[-1].get("cycle", 0)
+    first_scarcity = config.material_scarcity_at(first_cycle)
+    current_scarcity = config.material_scarcity_at(current_cycle)
+    parts.append(
+        f"  Scarcity trajectory: {first_scarcity:.2f} (cycle {first_cycle})"
+        f" -> {current_scarcity:.2f} (cycle {current_cycle})"
+    )
+
+    # Abandoned mechanisms — used at some point but not in the recent window
+    all_used: set[str] = set()
+    last_use_cycle: dict[str, int] = {}
+    for a in history:
+        mech = a.get("mechanism", "custom")
+        cycle = a.get("cycle", 0)
+        all_used.add(mech)
+        last_use_cycle[mech] = cycle
+
+    recent_used = set(usage.keys())
+    abandoned = all_used - recent_used
+    if abandoned:
+        abandon_parts = []
+        for m in sorted(abandoned):
+            last_c = last_use_cycle[m]
+            scarcity_then = config.material_scarcity_at(last_c)
+            abandon_parts.append(f"{m} (last used cycle {last_c}, scarcity was {scarcity_then:.2f})")
+        parts.append(f"  Abandoned mechanisms: {', '.join(abandon_parts)}")
+
+    # Never-used mechanisms
+    never_used = set(MECHANISMS) - all_used
+    if never_used:
+        parts.append(f"  Never used: {', '.join(sorted(never_used))}")
+
+    return parts
+
+
 def _build_user_prompt(agent: CoordinationAgent, observations: dict[str, Any]) -> str:
     """Construct the per-cycle user prompt from agent state and observations."""
     persona = agent.persona
@@ -106,6 +168,12 @@ def _build_user_prompt(agent: CoordinationAgent, observations: dict[str, Any]) -
                 f"  Cycle {a.get('cycle')}: {a.get('mechanism')}/{a.get('action_type')} "
                 f"on {a.get('target_good', '?')}"
             )
+
+    # Behavioral summary — self-reflection from full history
+    summary = _build_behavioral_summary(agent)
+    if summary:
+        parts.append("")
+        parts.extend(summary)
 
     return "\n".join(parts)
 
