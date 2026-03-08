@@ -1,5 +1,8 @@
 # Theoretical Framework and Research Hypotheses
 
+**Version:** v0.1 — Pre-simulation draft
+**Last updated:** 2026-03-08
+
 ---
 
 ## 1. Research Question
