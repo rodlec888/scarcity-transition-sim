@@ -1,11 +1,5 @@
 # Theoretical Framework and Research Hypotheses
 
-**Author:** Rodrigue Lecomte
-**Credentials:** Master en droit | Advanced Master in Digital Information & Communication Technology | Former Barrister, Belgian Bar
-**Affiliation:** Independent Researcher
-**Version:** v0.1 — Pre-simulation draft
-**Date:** March 2026
-
 ---
 
 ## 1. Research Question

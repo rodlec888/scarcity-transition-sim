@@ -1,6 +1,5 @@
 # Experimental Results
 
-**Author:** Rodrigue Lecomte
 **Last updated:** 2026-03-07
 
 This document tracks findings across simulation runs. Each run produces a local
