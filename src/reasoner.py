@@ -11,9 +11,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import random
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -311,6 +313,11 @@ class AgentReasoner:
         )
         self._call_count = 0
 
+        # Concurrency control: semaphore limits simultaneous async calls
+        max_concurrent = int(os.getenv("XAI_MAX_CONCURRENT", "10"))
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_retries = 3
+
     @classmethod
     def get_instance(cls) -> AgentReasoner:
         """Return the singleton AgentReasoner instance."""
@@ -373,32 +380,64 @@ class AgentReasoner:
     async def async_decide(
         self, agent: CoordinationAgent, observations: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Call the LLM asynchronously to decide an agent's action for this cycle.
+        """Call the LLM asynchronously with semaphore concurrency control and retry.
+
+        Retries transient errors (503, 429, timeouts) up to max_retries times
+        with exponential backoff + jitter. The semaphore limits how many calls
+        are in-flight simultaneously to avoid overwhelming the API.
 
         Args:
             agent: The agent making the decision.
             observations: Environment observations from agent.observe().
 
         Returns:
-            Structured action dict, or None if the call fails.
+            Structured action dict, or None if all retries fail.
         """
         payload = self._build_payload(agent, observations)
 
-        try:
-            response = await self.async_client.post("/chat/completions", json=payload)
-            response.raise_for_status()
-            self._call_count += 1
+        async with self._semaphore:
+            for attempt in range(self._max_retries + 1):
+                try:
+                    response = await self.async_client.post(
+                        "/chat/completions", json=payload
+                    )
+                    response.raise_for_status()
+                    self._call_count += 1
 
-            data = response.json()
-            raw_content = data["choices"][0]["message"]["content"]
-            return _parse_action_response(raw_content)
+                    data = response.json()
+                    raw_content = data["choices"][0]["message"]["content"]
+                    return _parse_action_response(raw_content)
 
-        except httpx.HTTPStatusError as e:
-            logger.error("xAI API error: %s %s", e.response.status_code, e.response.text[:200])
-            return None
-        except (httpx.RequestError, KeyError, IndexError) as e:
-            logger.error("xAI API request failed: %s", e)
-            return None
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+                    if status in (429, 503) and attempt < self._max_retries:
+                        delay = (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            "xAI API %d (attempt %d/%d), retrying in %.1fs",
+                            status, attempt + 1, self._max_retries + 1, delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error(
+                        "xAI API error: %s %s", status, e.response.text[:200]
+                    )
+                    return None
+                except httpx.RequestError as e:
+                    if attempt < self._max_retries:
+                        delay = (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            "xAI request error (attempt %d/%d): %s, retrying in %.1fs",
+                            attempt + 1, self._max_retries + 1, e, delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error("xAI API request failed after retries: %s", e)
+                    return None
+                except (KeyError, IndexError) as e:
+                    logger.error("xAI API response parse error: %s", e)
+                    return None
+
+        return None  # unreachable, but satisfies type checker
 
     @property
     def call_count(self) -> int:

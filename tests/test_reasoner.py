@@ -590,3 +590,119 @@ class TestAgentReasonerAsyncDecide:
         messages = payload["messages"]
         assert messages[0]["content"] == SYSTEM_PROMPT
         assert "CYCLE: 10" in messages[1]["content"]
+
+    @pytest.mark.asyncio
+    async def test_async_decide_retries_on_503(self, reasoner, monkeypatch):
+        """503 triggers retry with backoff, succeeds on second attempt."""
+        monkeypatch.setattr("src.reasoner.random.uniform", lambda a, b: 0)
+        monkeypatch.setattr("src.reasoner.asyncio.sleep", AsyncMock())
+
+        action_json = _valid_action_json()
+        error_resp = self._mock_async_response("", status_code=503)
+        ok_resp = self._mock_async_response(action_json)
+        reasoner.async_client.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is not None
+        assert result["mechanism"] == "price"
+        assert reasoner.async_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_async_decide_retries_on_429(self, reasoner, monkeypatch):
+        """429 triggers retry with backoff, succeeds on second attempt."""
+        monkeypatch.setattr("src.reasoner.random.uniform", lambda a, b: 0)
+        monkeypatch.setattr("src.reasoner.asyncio.sleep", AsyncMock())
+
+        action_json = _valid_action_json()
+        error_resp = self._mock_async_response("", status_code=429)
+        ok_resp = self._mock_async_response(action_json)
+        reasoner.async_client.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is not None
+        assert reasoner.async_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_async_decide_exhausts_retries_returns_none(self, reasoner, monkeypatch):
+        """All retries fail -> returns None."""
+        monkeypatch.setattr("src.reasoner.random.uniform", lambda a, b: 0)
+        monkeypatch.setattr("src.reasoner.asyncio.sleep", AsyncMock())
+
+        error_resp = self._mock_async_response("", status_code=503)
+        reasoner.async_client.post = AsyncMock(
+            side_effect=[error_resp, error_resp, error_resp, error_resp]
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is None
+        # 1 initial + 3 retries = 4 attempts
+        assert reasoner.async_client.post.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_async_decide_no_retry_on_400(self, reasoner):
+        """Non-retryable errors (400, 403) fail immediately without retry."""
+        error_resp = self._mock_async_response("", status_code=400)
+        reasoner.async_client.post = AsyncMock(return_value=error_resp)
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is None
+        assert reasoner.async_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_decide_retries_network_error(self, reasoner, monkeypatch):
+        """Network errors are retried."""
+        monkeypatch.setattr("src.reasoner.random.uniform", lambda a, b: 0)
+        monkeypatch.setattr("src.reasoner.asyncio.sleep", AsyncMock())
+
+        action_json = _valid_action_json()
+        ok_resp = self._mock_async_response(action_json)
+        reasoner.async_client.post = AsyncMock(
+            side_effect=[httpx.RequestError("timeout"), ok_resp]
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is not None
+        assert reasoner.async_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_async_decide_semaphore_limits_concurrency(self, reasoner):
+        """Semaphore limits how many calls are in-flight simultaneously."""
+        reasoner._semaphore = asyncio.Semaphore(2)
+        max_concurrent = 0
+        current = 0
+
+        action_json = _valid_action_json()
+
+        async def _tracked_post(*args, **kwargs):
+            nonlocal current, max_concurrent
+            current += 1
+            max_concurrent = max(max_concurrent, current)
+            await asyncio.sleep(0.01)
+            current -= 1
+            return self._mock_async_response(action_json)
+
+        reasoner.async_client.post = _tracked_post
+
+        tasks = [
+            reasoner.async_decide(_make_fake_agent(), _make_observations(cycle=i))
+            for i in range(6)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        assert all(r is not None for r in results)
+        assert max_concurrent <= 2
