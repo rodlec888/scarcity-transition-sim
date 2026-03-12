@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
+import logging.handlers
 import os
 import time
 from dataclasses import asdict
@@ -36,10 +37,20 @@ from src.reasoner import AgentReasoner
 from src.retroanalysis import trace_replacement_chains
 from src.verdicts import classify_all_mechanisms
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+# Console handler (always present)
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+# Rotating file handler: logs/simulation.log — 5 MB per file, 3 backups
+_log_dir = Path(__file__).resolve().parent.parent / "logs"
+_log_dir.mkdir(exist_ok=True)
+_rotating = logging.handlers.RotatingFileHandler(
+    _log_dir / "simulation.log", maxBytes=5 * 1024 * 1024, backupCount=3,
 )
+_rotating.setFormatter(logging.Formatter(LOG_FORMAT))
+logging.getLogger().addHandler(_rotating)
+
 logger = logging.getLogger(__name__)
 
 
@@ -175,6 +186,12 @@ async def run_single(args: argparse.Namespace) -> None:
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"run_{config.random_seed}_{config.transition_rate}_{config.scarcity_curve}_{ts}"
     output_dir = Path(args.output_dir) if args.output_dir else Path("outputs") / run_id
+
+    # Per-run log file alongside CSVs
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _run_handler = logging.FileHandler(output_dir / "run.log")
+    _run_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logging.getLogger().addHandler(_run_handler)
 
     logger.info(
         "Config: %d agents, %d total cycles, transition_rate=%d, curve=%s, seed=%d",
