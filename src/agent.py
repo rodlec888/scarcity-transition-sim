@@ -143,12 +143,27 @@ class CoordinationAgent(mesa.Agent):
         }
 
     def step(self):
-        """One simulation cycle: observe -> reason -> act -> record."""
+        """One simulation cycle: observe -> reason -> act -> record (synchronous)."""
         from src.reasoner import AgentReasoner
 
         observations = self.observe()
         reasoner = AgentReasoner.get_instance()
         action = reasoner.decide(self, observations)
+
+        if action:
+            self._execute_action(action)
+
+    async def async_step(self):
+        """One simulation cycle: observe -> reason -> act -> record (async).
+
+        Observations are gathered synchronously (local state only), then the
+        LLM call fires asynchronously. Execution and recording are synchronous.
+        """
+        from src.reasoner import AgentReasoner
+
+        observations = self.observe()
+        reasoner = AgentReasoner.get_instance()
+        action = await reasoner.async_decide(self, observations)
 
         if action:
             self._execute_action(action)

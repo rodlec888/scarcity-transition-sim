@@ -2,16 +2,19 @@
 @file run_single.py
 @description Full 5-phase runner with verdict classification and retroanalysis.
     Accepts CLI args for transition rate, scarcity curve, and seed.
+    Uses async concurrent API calls within each cycle for performance.
 @author ScarcityTransitionSim_Dev
-@version 1.0.0
-@date 2026-03-06
+@version 2.0.0
+@date 2026-03-12
 @changelog
+- 2026-03-12: v2.0.0 - Async concurrent agent reasoning within each cycle
 - 2026-03-06: v1.0.0 - Initial creation
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -156,8 +159,8 @@ def _write_run_metadata(
     )
 
 
-def run_single(args: argparse.Namespace) -> None:
-    """Run a full simulation, classify verdicts, and export all outputs."""
+async def run_single(args: argparse.Namespace) -> None:
+    """Run a full simulation with async concurrent agent reasoning."""
     config = SimConfig(
         transition_rate=args.transition_rate,
         scarcity_curve=args.curve,
@@ -183,7 +186,7 @@ def run_single(args: argparse.Namespace) -> None:
     )
     logger.info("Output dir: %s", output_dir.resolve())
 
-    # --- Phase 1-4: Run simulation ---
+    # --- Phase 1-4: Run simulation (async concurrent per cycle) ---
     model = ScarcityModel(config)
     model.datacollector = create_collector()
 
@@ -191,7 +194,7 @@ def run_single(args: argparse.Namespace) -> None:
 
     for cycle in range(config.total_cycles):
         phase = config.phase_at(cycle)
-        model.step()
+        await model.async_step()
         model.datacollector.collect(model)
 
         # Log progress every 50 cycles
@@ -285,4 +288,4 @@ def run_single(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    run_single(parse_args())
+    asyncio.run(run_single(parse_args()))

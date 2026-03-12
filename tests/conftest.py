@@ -30,12 +30,12 @@ class MockReasoner:
     """Drop-in replacement for AgentReasoner that returns deterministic actions.
 
     Cycles through the 7 standard mechanisms round-robin based on the cycle
-    number in observations. Makes ZERO API calls.
+    number in observations. Makes ZERO API calls. Supports both sync and async.
     """
 
     _call_count: int = 0
 
-    def decide(self, agent: CoordinationAgent, observations: dict[str, Any]) -> dict[str, Any]:
+    def _make_action(self, observations: dict[str, Any]) -> dict[str, Any]:
         cycle = observations.get("cycle", 0)
         mech = _STANDARD_MECHANISMS[cycle % len(_STANDARD_MECHANISMS)]
         action_type = ACTION_VOCABULARY[mech][0]
@@ -48,6 +48,12 @@ class MockReasoner:
             "reasoning": f"Mock action for cycle {cycle}",
             "details": {},
         }
+
+    def decide(self, agent: CoordinationAgent, observations: dict[str, Any]) -> dict[str, Any]:
+        return self._make_action(observations)
+
+    async def async_decide(self, agent: CoordinationAgent, observations: dict[str, Any]) -> dict[str, Any]:
+        return self._make_action(observations)
 
     @property
     def call_count(self) -> int:

@@ -11,9 +11,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -460,3 +461,132 @@ class TestSystemPrompt:
 
     def test_mentions_json(self):
         assert "JSON" in SYSTEM_PROMPT or "json" in SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# AgentReasoner.async_decide() — mocked httpx.AsyncClient
+# ---------------------------------------------------------------------------
+
+class TestAgentReasonerAsyncDecide:
+
+    @pytest.fixture()
+    def reasoner(self, monkeypatch):
+        """Create a real AgentReasoner with mocked async client."""
+        monkeypatch.setenv("XAI_API_KEY", "test-key-123")
+        import src.reasoner as mod
+
+        mod._reasoner_instance = None
+        r = AgentReasoner()
+        yield r
+        r.client.close()
+        mod._reasoner_instance = None
+
+    def _mock_async_response(self, content: str, status_code: int = 200) -> MagicMock:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = status_code
+        resp.json.return_value = {
+            "choices": [{"message": {"content": content}}]
+        }
+        resp.raise_for_status = MagicMock()
+        if status_code >= 400:
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "error", request=MagicMock(), response=resp
+            )
+            resp.text = "error body"
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_async_decide_success(self, reasoner):
+        action_json = _valid_action_json()
+        reasoner.async_client.post = AsyncMock(
+            return_value=self._mock_async_response(action_json)
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is not None
+        assert result["mechanism"] == "price"
+        assert result["action_type"] == "bid"
+        assert reasoner.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_decide_http_error_returns_none(self, reasoner):
+        reasoner.async_client.post = AsyncMock(
+            return_value=self._mock_async_response("", status_code=403)
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_async_decide_network_error_returns_none(self, reasoner):
+        reasoner.async_client.post = AsyncMock(
+            side_effect=httpx.RequestError("connection failed")
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_async_decide_invalid_json_returns_none(self, reasoner):
+        reasoner.async_client.post = AsyncMock(
+            return_value=self._mock_async_response("I cannot help you with that.")
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations()
+        result = await reasoner.async_decide(agent, obs)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_async_decide_concurrent_calls(self, reasoner):
+        """Multiple async_decide calls run concurrently via asyncio.gather."""
+        action_json = _valid_action_json()
+        reasoner.async_client.post = AsyncMock(
+            return_value=self._mock_async_response(action_json)
+        )
+
+        agents_obs = [
+            (_make_fake_agent(), _make_observations(cycle=i))
+            for i in range(5)
+        ]
+        tasks = [
+            reasoner.async_decide(agent, obs)
+            for agent, obs in agents_obs
+        ]
+        results = await asyncio.gather(*tasks)
+
+        assert len(results) == 5
+        assert all(r is not None for r in results)
+        assert all(r["mechanism"] == "price" for r in results)
+        assert reasoner.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_async_decide_uses_same_payload_as_sync(self, reasoner):
+        """Verify async_decide sends identical payload to sync decide."""
+        action_json = _valid_action_json()
+        reasoner.async_client.post = AsyncMock(
+            return_value=self._mock_async_response(action_json)
+        )
+
+        agent = _make_fake_agent()
+        obs = _make_observations(cycle=10, phase="transition")
+        await reasoner.async_decide(agent, obs)
+
+        call_args = reasoner.async_client.post.call_args
+        assert call_args[0][0] == "/chat/completions"
+        payload = call_args[1]["json"]
+        assert payload["model"] == reasoner.model
+        assert payload["temperature"] == 0.7
+        messages = payload["messages"]
+        assert messages[0]["content"] == SYSTEM_PROMPT
+        assert "CYCLE: 10" in messages[1]["content"]

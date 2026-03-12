@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import networkx as nx
+import pytest
 
 from src.config import MECHANISMS, SimConfig
 from src.environment import INHERENT_GOODS, MATERIAL_GOODS, ScarcityModel
@@ -265,3 +266,48 @@ class TestBaselineCapture:
         assert seeded_model.baseline_patterns is not None
         assert isinstance(seeded_model.baseline_patterns, dict)
         assert set(MECHANISMS).issubset(set(seeded_model.baseline_patterns.keys()))
+
+
+# ---------------------------------------------------------------------------
+# async_step()
+# ---------------------------------------------------------------------------
+
+class TestAsyncStep:
+
+    @pytest.mark.asyncio
+    async def test_advances_cycle(self, seeded_model):
+        await seeded_model.async_step()
+        assert seeded_model.cycle == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_steps(self, seeded_model):
+        for _ in range(5):
+            await seeded_model.async_step()
+        assert seeded_model.cycle == 5
+
+    @pytest.mark.asyncio
+    async def test_produces_actions(self, seeded_model):
+        await seeded_model.async_step()
+        assert len(seeded_model.cycle_actions) > 0
+
+    @pytest.mark.asyncio
+    async def test_all_agents_act(self, seeded_model):
+        await seeded_model.async_step()
+        agent_ids = {a["agent_id"] for a in seeded_model.cycle_actions}
+        expected_ids = {a.unique_id for a in seeded_model.agents_list}
+        assert agent_ids == expected_ids
+
+    @pytest.mark.asyncio
+    async def test_resets_cycle_actions_each_step(self, seeded_model):
+        await seeded_model.async_step()
+        first_actions = list(seeded_model.cycle_actions)
+        await seeded_model.async_step()
+        # Actions should be from the second cycle only
+        assert all(a["cycle"] == 1 for a in seeded_model.cycle_actions)
+
+    @pytest.mark.asyncio
+    async def test_baseline_captured_at_end_of_phase1(self, seeded_model):
+        config = seeded_model.config
+        for _ in range(config.phase1_cycles):
+            await seeded_model.async_step()
+        assert seeded_model.baseline_patterns is not None

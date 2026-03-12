@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import mesa
@@ -81,7 +82,7 @@ class ScarcityModel(mesa.Model):
         return list(self.network.neighbors(node_id))
 
     def step(self):
-        """Advance the simulation by one cycle."""
+        """Advance the simulation by one cycle (synchronous)."""
         # Update scarcity
         self.material_scarcity = self.config.material_scarcity_at(self.cycle)
         self._update_goods()
@@ -91,6 +92,51 @@ class ScarcityModel(mesa.Model):
 
         # All agents act
         self.agents.shuffle_do("step")
+
+        # Capture baseline at end of Phase 1
+        if (
+            self.baseline_patterns is None
+            and self.cycle == self.config.phase1_cycles - 1
+        ):
+            self.baseline_patterns = self._compute_behavioral_patterns()
+
+        self.cycle += 1
+
+    async def async_step(self):
+        """Advance the simulation by one cycle with concurrent agent reasoning.
+
+        All agents observe synchronously (snapshot of current state), then all
+        LLM calls fire concurrently via asyncio.gather. Actions are recorded
+        sequentially after all responses arrive — preserving deterministic
+        cycle boundaries while parallelizing the API-bound work.
+        """
+        # Update scarcity
+        self.material_scarcity = self.config.material_scarcity_at(self.cycle)
+        self._update_goods()
+
+        # Reset per-cycle tracking
+        self.cycle_actions = []
+
+        # Shuffle agent order (reproducible via seeded RNG)
+        agents = self.agents_list
+        self.random.shuffle(agents)
+
+        # All agents observe synchronously (snapshot of current state)
+        agent_obs = [(agent, agent.observe()) for agent in agents]
+
+        # Fire all LLM calls concurrently
+        from src.reasoner import AgentReasoner
+
+        reasoner = AgentReasoner.get_instance()
+        tasks = [
+            reasoner.async_decide(agent, obs) for agent, obs in agent_obs
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Apply actions sequentially (deterministic recording order)
+        for (agent, _obs), action in zip(agent_obs, results):
+            if action:
+                agent._execute_action(action)
 
         # Capture baseline at end of Phase 1
         if (

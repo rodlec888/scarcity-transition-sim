@@ -281,6 +281,7 @@ class AgentReasoner:
     """Handles all LLM API communication for agent decision-making.
 
     Singleton — use AgentReasoner.get_instance() to access.
+    Supports both sync (decide) and async (async_decide) operation.
     """
 
     def __init__(self):
@@ -293,12 +294,19 @@ class AgentReasoner:
         if not self.api_key:
             raise ValueError("XAI_API_KEY not set in environment")
 
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
         self.client = httpx.Client(
             base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
+            timeout=30.0,
+        )
+        self.async_client = httpx.AsyncClient(
+            base_url=self.base_url,
+            headers=headers,
             timeout=30.0,
         )
         self._call_count = 0
@@ -319,10 +327,23 @@ class AgentReasoner:
             _reasoner_instance.client.close()
             _reasoner_instance = None
 
+    def _build_payload(self, agent: CoordinationAgent, observations: dict[str, Any]) -> dict:
+        """Build the API request payload for an agent decision."""
+        user_prompt = _build_user_prompt(agent, observations)
+        return {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 300,
+        }
+
     def decide(
         self, agent: CoordinationAgent, observations: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Call the LLM to decide an agent's action for this cycle.
+        """Call the LLM synchronously to decide an agent's action for this cycle.
 
         Args:
             agent: The agent making the decision.
@@ -331,21 +352,40 @@ class AgentReasoner:
         Returns:
             Structured action dict, or None if the call fails.
         """
-        user_prompt = _build_user_prompt(agent, observations)
+        payload = self._build_payload(agent, observations)
 
         try:
-            response = self.client.post(
-                "/chat/completions",
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 300,
-                },
-            )
+            response = self.client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            self._call_count += 1
+
+            data = response.json()
+            raw_content = data["choices"][0]["message"]["content"]
+            return _parse_action_response(raw_content)
+
+        except httpx.HTTPStatusError as e:
+            logger.error("xAI API error: %s %s", e.response.status_code, e.response.text[:200])
+            return None
+        except (httpx.RequestError, KeyError, IndexError) as e:
+            logger.error("xAI API request failed: %s", e)
+            return None
+
+    async def async_decide(
+        self, agent: CoordinationAgent, observations: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Call the LLM asynchronously to decide an agent's action for this cycle.
+
+        Args:
+            agent: The agent making the decision.
+            observations: Environment observations from agent.observe().
+
+        Returns:
+            Structured action dict, or None if the call fails.
+        """
+        payload = self._build_payload(agent, observations)
+
+        try:
+            response = await self.async_client.post("/chat/completions", json=payload)
             response.raise_for_status()
             self._call_count += 1
 
