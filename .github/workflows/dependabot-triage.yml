@@ -103,6 +103,6 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
-                body: `**72h waiting period passed** — label promoted to \`ready-to-merge\`.\n\nNow eligible. **Merge only after the pre-merge audit passes** (file scope · OSV · install hooks · provenance · advisory authenticity · full local test suite + smoke). The audit result is posted here before merge.`,
+                body: `**72h waiting period passed** — label promoted to \`ready-to-merge\`.\n\nNow eligible. **Merge only after the pre-merge audit passes** (file scope · OSV · install hooks · provenance · advisory authenticity · full local test suite + smoke). The audit result is posted here before merge.\n\n**If the audit does not pass, do not merge — strip \`ready-to-merge\` and comment the finding** (HOLD / BLOCK-PATCH / REJECT; see \`DEPENDENCY_SECURITY_POLICY.md\`).`,
               });
             }
