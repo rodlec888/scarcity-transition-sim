@@ -300,7 +300,6 @@ class TestAsyncStep:
     @pytest.mark.asyncio
     async def test_resets_cycle_actions_each_step(self, seeded_model):
         await seeded_model.async_step()
-        first_actions = list(seeded_model.cycle_actions)
         await seeded_model.async_step()
         # Actions should be from the second cycle only
         assert all(a["cycle"] == 1 for a in seeded_model.cycle_actions)
