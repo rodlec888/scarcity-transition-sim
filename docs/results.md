@@ -1,10 +1,29 @@
 # Experimental Results
 
-**Last updated:** 2026-03-07
+**Last updated:** 2026-11-22
 
 This document tracks findings across simulation runs. Each run produces a local
 `run_metadata.json` with full parameters and context; this page curates the
 big-picture observations that emerge across runs.
+
+---
+
+## Correction (2026-11-22)
+
+Both runs below used the pilot design, in which agents' choices were recorded but
+changed nothing in the simulated economy. A review of run 2's 747 decisions shows:
+
+- Employment was 95% of decisions in the baseline phase, at full scarcity, so its
+  persistence afterwards is not a post-scarcity effect.
+- Money was never chosen, and the other mechanisms stayed between 0% and 6% from the
+  start, so their "collapse" verdicts describe mechanisms that were barely used.
+- Agents' stated reasons cite their assigned persona traits (for example "strong work
+  identity") and their neighbours' and own recent choices.
+- With one seed per configuration and a prompt change between the two runs, run-to-run
+  variation cannot be estimated.
+
+The observations below are kept as a record of the pilot, not as findings. The model
+is being redesigned before further runs.
 
 ---
 
@@ -19,7 +38,7 @@ Both runs used `grok-4-1-fast-reasoning`, pilot-scale parameters (20/100/20/10 p
 
 ---
 
-## Emerging Patterns
+## Pilot-design observations (superseded, see Correction)
 
 ### Employment persists stubbornly
 Across both runs, employment is the only mechanism that survives the transition to

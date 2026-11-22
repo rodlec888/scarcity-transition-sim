@@ -10,8 +10,8 @@ to coordinate goods that remain scarce (attention, status, location, time).
 
 Built with [Mesa 3](https://mesa.readthedocs.io/). Agents reason via LLM
 (xAI API) — each agent receives the current economic state and chooses which
-coordination mechanism to use, producing structured actions that feed back into
-the simulation.
+coordination mechanism to use, producing structured actions that are recorded and
+shown to neighbouring agents.
 
 ## Research question
 
@@ -33,12 +33,16 @@ Each mechanism receives one of six **verdicts**: `COLLAPSE`, `PERSIST_DORMANT`,
 
 ## Status
 
-This project is under active research. The simulation pipeline is validated and
-producing results. A full parameter sweep and paper are upcoming.
+This project is under active research, and its model is being redesigned before any
+further runs.
 
-**Current findings** are tracked in [Experimental Results](docs/results.md) — early
-runs show employment persisting stubbornly while all other mechanisms collapse at
-pilot scale.
+The two pilot runs in [Experimental Results](docs/results.md) used a design in which
+agents' choices were recorded but had no material consequences: no goods, money or
+welfare changed hands. Their headline pattern, employment persisting while the other
+mechanisms collapse, does not hold up. Employment already dominated at full scarcity,
+and agents' stated reasons cite their assigned persona traits and their neighbours' and
+own past choices rather than economic conditions. The runs are kept as a record of the
+pilot, not as evidence about post-scarcity coordination.
 
 ## Quick start
 
