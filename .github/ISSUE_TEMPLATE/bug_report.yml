@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in the simulation, its outputs or its tests does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Security vulnerabilities go through the Security tab (Report a vulnerability),
+        not a public issue. Never paste your API key or the contents of your `.env`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and parameters
+      description: >-
+        The exact command you ran (for example the full `scripts/run_single.py` line).
+        If a run produced a `run_metadata.json`, paste its `config` section.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output or logs
+      description: The traceback, or the relevant lines of the run output.
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, `uv --version`, and the commit you ran (`git rev-parse --short HEAD`).
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Before submitting
+      options:
+        - label: This issue contains no API key, `.env` contents or other credentials.
+          required: true

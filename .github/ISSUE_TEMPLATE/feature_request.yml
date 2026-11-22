@@ -1,0 +1,29 @@
+name: Proposal
+description: Propose a change to the model, the measurement protocol or the tooling.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question or problem
+      description: What this change would let the simulation answer, or what it fixes.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What you would change, and where (module, parameter, prompt, output file).
+    validations:
+      required: true
+  - type: textarea
+    id: comparability
+    attributes:
+      label: Effect on existing results
+      description: >-
+        Would this change the `cycle_data.csv` columns, the verdict thresholds or the agent
+        prompt, and so make new runs incomparable with the runs in docs/results.md?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
