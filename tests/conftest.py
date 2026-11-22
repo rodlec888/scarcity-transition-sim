@@ -2,10 +2,11 @@
 @file conftest.py
 @description Shared pytest fixtures for scarcity-transition-sim test suite.
 @author ScarcityTransitionSim_Dev
-@version 1.0.0
+@version 1.1.0
 @date 2026-03-05
 @changelog
 - 2026-03-05: v1.0.0 - Initial creation
+- 2026-11-22: v1.1.0 - Every test gets placeholder xAI settings, whatever .env holds
 """
 
 from __future__ import annotations
@@ -17,6 +18,27 @@ import pytest
 from src.agent import ACTION_VOCABULARY, CoordinationAgent
 from src.config import SimConfig
 from src.environment import ScarcityModel
+
+
+# ---------------------------------------------------------------------------
+# Environment isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolated_xai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give every test the same xAI settings, whatever the machine's `.env` holds.
+
+    `src.reasoner` loads `.env` when it is imported. Without this fixture the
+    suite passes only where a developer's `.env` sets `XAI_MODEL`, and a test
+    that sets no key of its own runs with the real `XAI_API_KEY`. Placeholders
+    make the suite behave the same locally and in CI. A test that needs a
+    variable changed or absent sets or deletes it itself, after this runs.
+    """
+    monkeypatch.setenv("XAI_MODEL", "test-model-not-real")
+    monkeypatch.setenv("XAI_API_KEY", "test-key-not-real")
+    monkeypatch.delenv("XAI_API_BASE_URL", raising=False)
+    monkeypatch.delenv("XAI_MAX_CONCURRENT", raising=False)
 
 
 # ---------------------------------------------------------------------------
